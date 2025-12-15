@@ -8,7 +8,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const brands = ['Stradivarius', 'Asos Petite', 'Topshop', 'Asos Design', 'Bershka',
+  const brands = ['Stradivarius', 'Asos Petite', 'Topshop', 'Bershka',
     'Asos Curve', 'Collusion', 'Miss Selfridge', 'New Look', 'Asyou',
     'River Island', 'Asos Tall', 'Adidas Originals', 'Asos Edition', 'Monki'];
 

@@ -98,7 +98,7 @@ Follow these steps to get the project running locally.
 * Python >= 3.11
 * Clone the repository
   ```bash
-    git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
+    git clone [[https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git](https://github.com/TrueNguyen203/Image-Text-Recommendation-System.git))
     cd your-repo-name
     ```
 ### RecommendAI folder:
@@ -159,4 +159,5 @@ Contributions are welcome! Please fork the repository and create a pull request 
 ## 📄 License
 
 This project is licensed under the MIT License.
+
 

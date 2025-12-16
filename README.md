@@ -142,18 +142,6 @@ Follow these steps to get the project running locally.
     node ./server.js
     ```
 
-### userdb folder:
-
-1.  **Install dependencies:**
-    ```bash
-    npm intall
-    ```
-
-2.  **Starting the API**
-    ```bash
-    node ./server.js
-    ```
-
 ## frontend folder
 1.  Install dependencies:
     ```bash
@@ -171,3 +159,4 @@ Contributions are welcome! Please fork the repository and create a pull request 
 ## 📄 License
 
 This project is licensed under the MIT License.
+

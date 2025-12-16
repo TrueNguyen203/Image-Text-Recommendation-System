@@ -1,5 +1,8 @@
-# Image-Text-Recommendation-System
-## Set up Terminal
+---
+marp: true
+---
+
+## Set up Terminal: Chỉ lần đầu tiên vào dự án 
 #### Bước 1: Tạo môi trường ảo
 ```
 &"C:\Users\admin\AppData\Local\Programs\Python\Python310\python.exe" -m venv venv
@@ -15,6 +18,24 @@ pip install -r requirements.txt
 ```
 pip freeze -r requirements.txt
 ```
+---
+
+## Các lần sau quay lại dự án
+#### Bước 1: Tái khởi động môi trường: 
+```
+venv\Scripts\activate
+```
+
+#### Bước 2: Reset Database
+```
+python reset_db.py
+```
+
+**Optional: Chạy Unit test cho Text và Image Embedding**
+```
+python test_logic.py
+```
+
 ---
 ## Chạy Luồng chính
 #### Bước 1: Chạy Ingest data (Chỉ chạy 1 lần đầu tiên thôi, các lần sau bỏ qua bước này)
@@ -87,3 +108,8 @@ uvicorn api.main:app --reload
 ]
 Response head
 ```
+---
+![Ảnh1](Swagger_UI1.png)
+
+---
+![Ảnh2](Swagger_UI2.png)

@@ -1,7 +1,3 @@
----
-marp: true
----
-
 ## Set up Terminal: Chỉ lần đầu tiên vào dự án 
 #### Bước 1: Tạo môi trường ảo
 ```

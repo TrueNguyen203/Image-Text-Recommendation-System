@@ -1,0 +1,20 @@
+{
+  "users": [
+    {
+      "email": "nguyen@example.com",
+      "password": "$2a$10$E2SAYHhJ/AZE7sfw8zpaXOgQZcY2SAq/3y8C2hrEA/tkyY33jDOFK",
+      "username": "Nguyen",
+      "type": "user",
+      "history": 116024881,
+      "id": 1
+    },
+    {
+      "email": "toan@example.com",
+      "password": "$2a$10$4KlBCH17eAYCxed3EufGButlfXJ2IDMBLsrD8eernzcJkS00DgsuK",
+      "username": "Toan",
+      "type": "user",
+      "history": "",
+      "id": 2
+    }
+  ]
+}

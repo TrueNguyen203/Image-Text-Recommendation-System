@@ -1,139 +1,247 @@
 import pandas as pd
-import requests
+import os
 from PIL import Image
-from io import BytesIO
 from sentence_transformers import SentenceTransformer
 from vectordb.qdrant_client_handler import QdrantHandler
 from qdrant_client.http import models
 import ast
-import re
 
 class DataIngestion:
-    def __init__(self, csv_path: str):
-        # Đọc CSV, chuyển sku thành string để tránh lỗi
+    def __init__(self, csv_path: str, images_folder: str):
         print(f"[INFO] Reading CSV from {csv_path}...")
         self.df = pd.read_csv(csv_path)
         self.df['sku'] = self.df['sku'].astype(str)
+        self.images_folder = images_folder
         
-        # Load Models
-        print("[INFO] Loading Text Embedding Model (all-MiniLM-L6-v2)...")
-        self.text_model = SentenceTransformer('all-MiniLM-L6-v2') # Dim: 384
+        # --- CHỈ DÙNG 1 MODEL CLIP ---
+        # CLIP embed ra vector 512 chiều cho cả Text và Ảnh
+        print("[INFO] Loading CLIP Model (clip-ViT-B-32)...")
+        self.model = SentenceTransformer('clip-ViT-B-32')
         
-        print("[INFO] Loading Image Embedding Model (clip-ViT-B-32)...")
-        self.image_model = SentenceTransformer('clip-ViT-B-32')   # Dim: 512
-        
-        # Init DB
-        self.text_db = QdrantHandler(collection_name="products_text", vector_size=384)
+        # Init DB (Cả 2 đều size 512)
+        self.text_db = QdrantHandler(collection_name="products_text", vector_size=512)
         self.image_db = QdrantHandler(collection_name="products_image", vector_size=512)
 
-    def parse_image_url(self, image_col_data):
-        """
-        Xử lý cột 'images' phức tạp: "[['Product', ['url1', 'url2']...]]"
-        """
+    def extract_clean_description(self, desc_col_data):
+        """Parse chuỗi json/list trong description thành text thuần"""
         try:
-            # Cách 1: Thử parse cấu trúc list
-            if isinstance(image_col_data, str):
-                data = ast.literal_eval(image_col_data)
-                # Cấu trúc mong đợi: [['Product', ['https://...', ...]], ...]
-                # Lấy phần tử đầu tiên -> lấy list url -> lấy url đầu tiên
-                return data[0][1][0]
+            if pd.isna(desc_col_data): return ""
+            data_list = ast.literal_eval(str(desc_col_data))
+            text_parts = []
+            if isinstance(data_list, list):
+                for item in data_list:
+                    if isinstance(item, dict):
+                        text_parts.extend(item.values())
+            return ". ".join([str(t) for t in text_parts])
         except:
-            # Cách 2: Fallback dùng Regex nếu cấu trúc lỗi
-            # Tìm chuỗi bắt đầu bằng http và kết thúc bằng jpg/png...
-            try:
-                match = re.search(r'(https?://[^\s]+\.(?:jpg|jpeg|png|webp))', str(image_col_data))
-                if match:
-                    return match.group(0)
-            except:
-                pass
-        return None
-
-    def download_image(self, url: str):
-        try:
-            headers = {'User-Agent': 'Mozilla/5.0'} # Fake user agent để tránh bị block
-            response = requests.get(url, headers=headers, timeout=3)
-            if response.status_code == 200:
-                return Image.open(BytesIO(response.content)).convert("RGB")
-        except:
-            pass
-        return None
+            return str(desc_col_data)
 
     def process_and_ingest(self, batch_size=50):
         total_rows = len(self.df)
-        print(f"[INFO] Start processing {total_rows} products with Batch Size: {batch_size}...")
+        print(f"[INFO] Start processing {total_rows} products (Local Images)...")
 
         text_batch = []
         image_batch = []
+        success_img_count = 0
 
         for index, row in self.df.iterrows():
             try:
-                # 1. Lấy dữ liệu cơ bản
-                p_id = int(row['sku']) # Dùng sku làm ID (Qdrant yêu cầu int hoặc uuid)
+                # 1. Lấy thông tin cơ bản
+                sku = str(row['sku']).replace(".0", "") # Xử lý nếu pandas đọc thành 12345.0
+                try:
+                    p_id = int(sku)
+                except:
+                    continue # Bỏ qua nếu SKU không phải số
+
                 brand = str(row['brand']) if not pd.isna(row['brand']) else ""
                 color = str(row['color']) if not pd.isna(row['color']) else ""
                 
-                # Payload metadata dùng để lọc sau này
                 payload = {
                     "product_id": p_id,
                     "brand": brand,
                     "color": color
                 }
 
-                # 2. Xử lý Text (Chỉ dùng name và description theo yêu cầu)
-                # Xử lý description nếu bị null
-                desc = str(row['description']) if not pd.isna(row['description']) else ""
+                # --- 2. Xử lý TEXT (Dùng CLIP Text Encoder) ---
                 name = str(row['name']) if not pd.isna(row['name']) else ""
+                clean_desc = self.extract_clean_description(row['description'])
+                full_text = f"{name}. {clean_desc}"[:77] # CLIP giới hạn token text, cắt ngắn để tối ưu (hoặc để thư viện tự cắt)
                 
-                full_text = f"{name}. {desc}"
-                text_vector = self.text_model.encode(full_text).tolist()
-                
-                text_batch.append(models.PointStruct(
-                    id=p_id,
-                    vector=text_vector,
-                    payload=payload
-                ))
+                # Encode Text bằng CLIP
+                text_vector = self.model.encode(full_text).tolist()
+                text_batch.append(models.PointStruct(id=p_id, vector=text_vector, payload=payload))
 
-                # 3. Xử lý Image
-                raw_img_str = row['images']
-                img_url = self.parse_image_url(raw_img_str)
+                # --- 3. Xử lý ẢNH (Đọc từ Local Folder) ---
+                # Giả định tên file ảnh là {sku}.jpg. Nếu file ảnh của bạn tên khác, hãy sửa dòng này.
+                image_path = os.path.join(self.images_folder, f"{sku}.jpg")
                 
-                if img_url:
-                    img_obj = self.download_image(img_url)
-                    if img_obj:
-                        image_vector = self.image_model.encode(img_obj).tolist()
-                        image_batch.append(models.PointStruct(
-                            id=p_id,
-                            vector=image_vector,
-                            payload=payload
-                        ))
-                
-                # 4. Upload theo Batch (để tránh tràn RAM và nhanh hơn)
+                if os.path.exists(image_path):
+                    try:
+                        img_obj = Image.open(image_path).convert("RGB")
+                        # Encode Ảnh bằng CLIP
+                        image_vector = self.model.encode(img_obj).tolist()
+                        
+                        image_batch.append(models.PointStruct(id=p_id, vector=image_vector, payload=payload))
+                        success_img_count += 1
+                    except Exception as img_err:
+                        print(f"[WARN] Corrupt image {image_path}: {img_err}")
+                else:
+                    # Uncomment dòng dưới nếu muốn debug xem ảnh nào thiếu
+                    # print(f"[MISSING] Image not found: {image_path}")
+                    pass
+
+                # --- 4. Upload Batch ---
                 if len(text_batch) >= batch_size:
                     self.text_db.upsert_points(text_batch)
-                    text_batch = [] # Reset batch
-                    print(f"--> Uploaded batch Text at index {index}")
+                    text_batch = []
 
                 if len(image_batch) >= batch_size:
                     self.image_db.upsert_points(image_batch)
-                    image_batch = [] # Reset batch
-                    print(f"--> Uploaded batch Image at index {index}")
+                    image_batch = []
+                    print(f"--> [Batch {index}] Image Count: {success_img_count}")
 
             except Exception as e:
-                print(f"[ERR] Error at row {index}: {e}")
+                print(f"[ERR] Row {index}: {e}")
                 continue
 
-        # Upload nốt những phần tử còn sót lại
-        if text_batch:
-            self.text_db.upsert_points(text_batch)
-        if image_batch:
-            self.image_db.upsert_points(image_batch)
+        # Upload phần dư
+        if text_batch: self.text_db.upsert_points(text_batch)
+        if image_batch: self.image_db.upsert_points(image_batch)
 
-        print("[SUCCESS] Ingestion Process Completed!")
+        print(f"[SUCCESS] Ingest Done! Processed Images: {success_img_count}/{total_rows}")
 
-if __name__ == "__main__":
-    # Sửa đường dẫn tới file CSV mới của bạn
-    ingestor = DataIngestion(csv_path="data/asos_products.csv")
-    ingestor.process_and_ingest(batch_size=50)
+# Bản 2:
+# import pandas as pd
+# import requests
+# from PIL import Image
+# from io import BytesIO
+# from sentence_transformers import SentenceTransformer
+# from vectordb.qdrant_client_handler import QdrantHandler
+# from qdrant_client.http import models
+# import ast
+# import socket # Để set timeout mức socket
+
+# class DataIngestion:
+#     def __init__(self, csv_path: str):
+#         print(f"[INFO] Reading CSV from {csv_path}...")
+#         self.df = pd.read_csv(csv_path, on_bad_lines='skip')
+#         self.df['sku'] = self.df['sku'].astype(str)
+        
+#         # Set global socket timeout để tránh treo mạng vô tận
+#         socket.setdefaulttimeout(5) 
+        
+#         print("[INFO] Loading Text Model...")
+#         self.text_model = SentenceTransformer('all-MiniLM-L6-v2') 
+        
+#         print("[INFO] Loading Image Model...")
+#         self.image_model = SentenceTransformer('clip-ViT-B-32')   
+        
+#         self.text_db = QdrantHandler(collection_name="products_text", vector_size=384)
+#         self.image_db = QdrantHandler(collection_name="products_image", vector_size=512)
+
+#     def extract_image_url(self, image_col_data):
+#         try:
+#             if pd.isna(image_col_data): return None
+#             # Thử parse list
+#             urls = ast.literal_eval(str(image_col_data))
+#             if isinstance(urls, list) and len(urls) > 0:
+#                 return urls[0]
+#         except:
+#             # Fallback nếu eval lỗi, lấy chuỗi thô (nếu nó là link đơn)
+#             s = str(image_col_data)
+#             if s.startswith('http'): return s
+#         return None
+
+#     def extract_clean_description(self, desc_col_data):
+#         try:
+#             if pd.isna(desc_col_data): return ""
+#             data_list = ast.literal_eval(str(desc_col_data))
+#             text_parts = []
+#             if isinstance(data_list, list):
+#                 for item in data_list:
+#                     if isinstance(item, dict):
+#                         text_parts.extend(item.values())
+#             return ". ".join([str(t) for t in text_parts])
+#         except:
+#             return str(desc_col_data)
+
+#     def download_image(self, url: str):
+#         try:
+#             # Fake User-Agent giống trình duyệt thật
+#             headers = {
+#                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+#             }
+#             # Timeout cực ngắn: 2 giây connect, 2 giây đọc
+#             response = requests.get(url, headers=headers, timeout=(2, 2))
+#             if response.status_code == 200:
+#                 return Image.open(BytesIO(response.content)).convert("RGB")
+#         except Exception:
+#             # print(f"   [Warn] Download failed: {url}") # Bỏ comment nếu muốn xem lỗi chi tiết
+#             return None
+#         return None
+
+#     def process_and_ingest(self, batch_size=10): # Giảm mặc định xuống 10
+#         total_rows = len(self.df)
+#         print(f"[INFO] Start processing {total_rows} products...")
+
+#         text_batch = []
+#         image_batch = []
+#         success_img_count = 0
+
+#         for index, row in self.df.iterrows():
+#             # [DEBUG] In ra mỗi dòng để biết code đang chạy tới đâu
+#             # print(f"Processing row {index}/{total_rows}...", end='\r') 
+
+#             try:
+#                 try:
+#                     p_id = int(float(str(row['sku'])))
+#                 except:
+#                     continue
+
+#                 brand = str(row['brand']) if not pd.isna(row['brand']) else ""
+#                 color = str(row['color']) if not pd.isna(row['color']) else ""
+                
+#                 payload = {"product_id": p_id, "brand": brand, "color": color}
+
+#                 # 1. Text
+#                 name = str(row['name']) if not pd.isna(row['name']) else ""
+#                 clean_desc = self.extract_clean_description(row['description'])
+#                 full_text = f"{name}. {clean_desc}"
+                
+#                 text_vector = self.text_model.encode(full_text).tolist()
+#                 text_batch.append(models.PointStruct(id=p_id, vector=text_vector, payload=payload))
+
+#                 # 2. Image
+#                 img_url = self.extract_image_url(row['images'])
+#                 if img_url:
+#                     # In ra URL đang thử tải để xem có bị treo không
+#                     # print(f"   Downloading: {img_url[:50]}...") 
+#                     img_obj = self.download_image(img_url)
+#                     if img_obj:
+#                         image_vector = self.image_model.encode(img_obj).tolist()
+#                         image_batch.append(models.PointStruct(id=p_id, vector=image_vector, payload=payload))
+#                         success_img_count += 1
+
+#                 # 3. Upload Batch
+#                 if len(text_batch) >= batch_size:
+#                     self.text_db.upsert_points(text_batch)
+#                     text_batch = []
+
+#                 if len(image_batch) >= batch_size:
+#                     self.image_db.upsert_points(image_batch)
+#                     image_batch = []
+#                     # In ra ngay khi upload xong 1 batch
+#                     print(f"--> [SAVED] Index {index}: Uploaded batch (Total imgs: {success_img_count})")
+
+#             except Exception as e:
+#                 print(f"[ERR] Row {index}: {e}")
+#                 continue
+
+#         # Upload phần còn lại
+#         if text_batch: self.text_db.upsert_points(text_batch)
+#         if image_batch: self.image_db.upsert_points(image_batch)
+
+#         print(f"\n[SUCCESS] Finished! Total Images Ingested: {success_img_count}/{total_rows}")
 
 # Bản 1:
 # import pandas as pd

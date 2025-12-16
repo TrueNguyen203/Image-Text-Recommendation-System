@@ -1,102 +1,178 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from pydantic import BaseModel
 from typing import List, Optional
 from sentence_transformers import SentenceTransformer
 from vectordb.qdrant_client_handler import QdrantHandler
 from PIL import Image
-from pydantic import BaseModel
 import io
 
-app = FastAPI(title="ASOS Multimodal Recommendation API")
+app = FastAPI(title="ASOS Multimodal API")
 
 # --- Load Models & DB ---
-print("[API] Loading models...")
-text_model = SentenceTransformer('all-MiniLM-L6-v2')
-# CLIP model dùng cho cả encode ảnh (khi upload) và encode text (nếu muốn text-to-image search)
-# Ở đây ta dùng clip-ViT-B-32 cho nhất quán với lúc ingest
+print("[API] Loading CLIP Model...")
+# Dùng chung 1 model cho cả Text và Image
 clip_model = SentenceTransformer('clip-ViT-B-32') 
 
-text_db = QdrantHandler(collection_name="products_text", vector_size=384)
+# Cả 2 DB bây giờ đều dùng vector size 512
+text_db = QdrantHandler(collection_name="products_text", vector_size=512)
 image_db = QdrantHandler(collection_name="products_image", vector_size=512)
 
-# --- Define Output Model ---
-# Theo yêu cầu: Chỉ trả về list product_id
+# --- Output Model ---
 class SearchResponse(BaseModel):
     product_ids: List[int]
 
 @app.get("/")
 def health_check():
-    return {"status": "ok", "message": "ASOS Recommender System Ready"}
+    return {"status": "ok", "message": "API Ready (CLIP Model)"}
 
-@app.post("/search")
+@app.post("/search", response_model=SearchResponse)
 async def search_products(
-    file: Optional[UploadFile] = File(None),  # Nhận file ảnh
-    query_text: Optional[str] = Form(None),   # Nhận text query
-    brand: Optional[str] = Form(None),        # Filter Brand
-    color: Optional[str] = Form(None)         # Filter Color
+    file: Optional[UploadFile] = File(None),
+    query_text: Optional[str] = Form(None),
+    brand: Optional[str] = Form(None),
+    color: Optional[str] = Form(None)
 ):
     """
-    Multimodal Search Endpoint.
-    - Ưu tiên: Nếu có 'file' (ảnh) -> Search bằng Image Vector.
-    - Nếu không có file, dùng 'query_text' -> Search bằng Text Vector.
-    - Hỗ trợ lọc theo 'brand' và 'color'.
-    - Trả về: Top 12 Product IDs.
+    Tìm kiếm sử dụng CLIP Model.
+    - Nếu gửi Ảnh (file) -> Embed ảnh -> Tìm trong products_image.
+    - Nếu gửi Text (query_text) -> Embed text -> Tìm trong products_text (hoặc products_image tùy bài toán, ở đây ta tìm trong products_text cho đúng ngữ nghĩa mô tả).
     """
     
-    print(f"--> Input: File={file.filename if file else 'None'}, Text='{query_text}', Brand='{brand}', Color='{color}'")
+    print(f"--> Input: Text='{query_text}', File={file.filename if file else 'None'}, Brand='{brand}', Color='{color}'")
 
-    # 1. Chuẩn bị filter criteria
     filters = {}
-    if brand:
-        filters["brand"] = brand
-    if color:
-        filters["color"] = color
+    if brand: filters["brand"] = brand
+    if color: filters["color"] = color
 
     search_results = []
-    top_k = 12  # Yêu cầu trả về 12 sản phẩm
+    top_k = 12
 
     try:
-        # CASE A: Tìm kiếm bằng Hình ảnh (Image-to-Image Similarity)
+        # CASE 1: Tìm bằng Ảnh
         if file:
             print("[LOG] Processing Image Search...")
-            # Đọc file ảnh từ request
             image_data = await file.read()
             image = Image.open(io.BytesIO(image_data)).convert("RGB")
             
-            # Embed ảnh query
+            # Embed ảnh query bằng CLIP
             query_vector = clip_model.encode(image).tolist()
             
-            # Search trong collection ẢNH
+            # Tìm sản phẩm có ẢNH giống ẢNH query
             search_results = image_db.search(
-                query_vector=query_vector,
-                limit=top_k,
-                filter_criteria=filters
+                query_vector=query_vector, limit=top_k, filter_criteria=filters
             )
 
-        # CASE B: Tìm kiếm bằng Text (Text-to-Text Similarity)
+        # CASE 2: Tìm bằng Text
         elif query_text:
             print("[LOG] Processing Text Search...")
-            # Embed text query
-            query_vector = text_model.encode(query_text).tolist()
+            # Embed text query bằng CLIP
+            query_vector = clip_model.encode(query_text).tolist()
             
-            # Search trong collection TEXT
+            # Có 2 chiến lược ở đây:
+            # a) Tìm sản phẩm có MÔ TẢ (Text) khớp với Text Query -> Search vào products_text
+            # b) Tìm sản phẩm có ẢNH khớp với Text Query (Text-to-Image) -> Search vào products_image
+            # Theo yêu cầu là tách biệt, ta sẽ search vào products_text
             search_results = text_db.search(
-                query_vector=query_vector,
-                limit=top_k,
-                filter_criteria=filters
+                query_vector=query_vector, limit=top_k, filter_criteria=filters
             )
         
         else:
-            raise HTTPException(status_code=400, detail="Vui lòng cung cấp ảnh (file) hoặc text (query_text) để tìm kiếm.")
+            raise HTTPException(status_code=400, detail="Please provide 'file' or 'query_text'.")
 
-        # 3. Trích xuất Product IDs
         result_ids = [hit.payload['product_id'] for hit in search_results]
         
-        print(f"<-- Found {len(result_ids)} items: {result_ids}")
+        print(f"<-- Found: {len(result_ids)} items.")
         return {"product_ids": result_ids}
 
     except Exception as e:
         print(f"[ERR] API Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Bản 2:
+# from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+# from pydantic import BaseModel
+# from typing import List, Optional
+# from sentence_transformers import SentenceTransformer
+# from vectordb.qdrant_client_handler import QdrantHandler
+# from PIL import Image
+# import io
+
+# app = FastAPI(title="ASOS Multimodal API")
+
+# # --- Load Models & DB ---
+# print("[API] Loading models...")
+# text_model = SentenceTransformer('all-MiniLM-L6-v2')
+# clip_model = SentenceTransformer('clip-ViT-B-32') 
+
+# # Khai báo kết nối DB
+# text_db = QdrantHandler(collection_name="products_text", vector_size=384)
+# image_db = QdrantHandler(collection_name="products_image", vector_size=512)
+
+# # --- Output Model (Chỉ trả về Product ID) ---
+# class SearchResponse(BaseModel):
+#     product_ids: List[int]
+
+# @app.get("/")
+# def health_check():
+#     return {"status": "ok", "message": "API Ready"}
+
+# @app.post("/search", response_model=SearchResponse)
+# async def search_products(
+#     file: Optional[UploadFile] = File(None),  # Ảnh upload
+#     query_text: Optional[str] = Form(None),   # Text query
+#     brand: Optional[str] = Form(None),        # Filter Brand
+#     color: Optional[str] = Form(None)         # Filter Color (Lưu ý: Input API đặt là color cho khớp DB)
+# ):
+#     """
+#     Search Endpoint:
+#     - Input: Ảnh HOẶC Text.
+#     - Filters: Brand, Color.
+#     - Output: Top 12 Product IDs.
+#     """
+    
+#     print(f"--> Req: Text='{query_text}', Brand='{brand}', Color='{color}', File={file.filename if file else 'None'}")
+
+#     # 1. Build Filter
+#     filters = {}
+#     if brand: filters["brand"] = brand
+#     if color: filters["color"] = color
+
+#     search_results = []
+#     top_k = 12 # Yêu cầu trả về 12 items
+
+#     try:
+#         # CASE 1: Tìm bằng Ảnh
+#         if file:
+#             print("[LOG] Searching by Image...")
+#             image_data = await file.read()
+#             image = Image.open(io.BytesIO(image_data)).convert("RGB")
+            
+#             query_vector = clip_model.encode(image).tolist()
+#             search_results = image_db.search(
+#                 query_vector=query_vector, limit=top_k, filter_criteria=filters
+#             )
+
+#         # CASE 2: Tìm bằng Text
+#         elif query_text:
+#             print("[LOG] Searching by Text...")
+#             query_vector = text_model.encode(query_text).tolist()
+            
+#             search_results = text_db.search(
+#                 query_vector=query_vector, limit=top_k, filter_criteria=filters
+#             )
+        
+#         else:
+#             raise HTTPException(status_code=400, detail="Please provide either 'file' or 'query_text'.")
+
+#         # 3. Extract IDs
+#         result_ids = [hit.payload['product_id'] for hit in search_results]
+        
+#         print(f"<-- Found: {len(result_ids)} items.")
+#         return {"product_ids": result_ids}
+
+#     except Exception as e:
+#         print(f"[ERR] {e}")
+#         raise HTTPException(status_code=500, detail=str(e))
 
 # Bản 1
 # from fastapi import FastAPI, HTTPException

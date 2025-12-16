@@ -1,4 +1,4 @@
-# [Project Name] - Image-Text-Recommender-System
+# Image-Text-Recommender-System
 
 A modern clothing e-commerce platform built with **ReactJS**, featuring an advanced **Image-Text Recommender System**. This project integrates semantic search and personalized recommendations to enhance the user shopping experience.
 
@@ -21,7 +21,7 @@ This repository hosts the source code for a fashion e-commerce application that 
 ## 🛠 Tech Stack
 
 * **Frontend:** ReactJS
-* **Backend API:** Nodejs:Json-server ||  Python: FastAPI, Transformers
+* **Backend API:** Nodejs:Json-server ||  Python: FastAPI, Transformers, Qdrant
 * **Databases:**
     * **User Data:** `json-server` (Mock DB for user profiles/sessions)
     * **Product Data:** `asos_products.csv` after filtering/cleaning the raw data from HuggingFace [Link](https://huggingface.co/datasets/UniqueData/asos-e-commerce-dataset/viewer/default/train?row=1&views%5B%5D=train)
@@ -38,7 +38,13 @@ The backend is built with **FastAPI** and exposes endpoints for product retrieva
 | Method | Endpoint | Description | Query/Body |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/` | Retrieve a specific product details by its SKU. | **Query Param:** `?sku=12345` |
+
+![](demo_images/Product_Page.png)
+
+
 | `POST` | `/products-by-brand` | Get top 4 products filtered by a specific brand. | **JSON Body:** `{"brand": "Nike"}` |
+
+![](demo_images/Home_Page.png)
 
 ### 2. Semantic Search (`/search`)
 
@@ -59,7 +65,9 @@ This endpoint allows searching via **Text** or **Image** using the CLIP model. I
 
 > **Note:** You must provide either `file` or `query_text`.
 
-### 3. Recommendation System (`/preference`)
+![](demo_images/Sematic_Search_Page.png)
+
+### 3. Recommendation System for the last purchase (`/preference`)
 
 Generates a dual-list of recommendations (Visual & Textual) based on a specific product SKU.
 
@@ -75,6 +83,9 @@ The API returns a JSON object containing two lists:
   "text": [ ...list of descriptively similar products... ]
 }
 ```
+> **Note:** The Page only work for User who has purchases in the history.
+
+![](demo_images/Preference_Page.png)
 
 ## 📂 Database Structure
 
@@ -98,8 +109,8 @@ Follow these steps to get the project running locally.
 * Python >= 3.11
 * Clone the repository
   ```bash
-    git clone [[https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git](https://github.com/TrueNguyen203/Image-Text-Recommendation-System.git))
-    cd your-repo-name
+    git clone https://github.com/TrueNguyen203/Image-Text-Recommendation-System.git
+    cd Image-Text-Recommendation-System
     ```
 ### RecommendAI folder:
 
@@ -152,12 +163,16 @@ Follow these steps to get the project running locally.
     npm run dev
     ```
 
-## 🤝 Contributing
-
-Contributions are welcome! Please fork the repository and create a pull request for any feature updates or bug fixes.
+## 🤝 Contributors:
+- Chu Cao Nguyên
+- Nguyễn Đức Anh
+- Nguyễn Mạnh Dũng
+- Nguyễn Khánh Toàn
+- Nguyễn Tiến Tuấn Thành
 
 ## 📄 License
 
 This project is licensed under the MIT License.
+
 
 

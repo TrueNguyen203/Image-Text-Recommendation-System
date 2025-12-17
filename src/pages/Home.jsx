@@ -58,7 +58,7 @@ export default function Home() {
   return (
     <div className="bg-white mt-20">
       {/* Products Grid */}
-      <div className="px-6 py-12 max-w-8xl mx-auto">
+      <div className="px-6 py-12 max-w-7xl mx-auto">
         {Object.entries(productsByBrand).map(([brand, brandProducts]) => (
           <div key={brand} className="mb-12">
             <h2 className="w-full bg-gray-100 text-3xl text-center font-bold tracking-tight text-gray-900 mb-4 py-4 px-2">{brand}</h2>

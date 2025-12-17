@@ -29,7 +29,7 @@ export default function Register() {
   };
 
   return (
-    <div className="bg-white pt-32">
+    <div className="bg-white pt-32 mb-40">
       <div className="max-w-md mx-auto mt-10 px-4 py-8 border rounded-lg shadow-lg">
         <h2 className="text-3xl font-bold text-center text-gray-900 mb-6">Đăng ký</h2>
         <form onSubmit={handleRegister} className="space-y-6">

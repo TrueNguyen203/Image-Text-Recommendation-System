@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 //Pages
 import Home from './pages/Home'
-import Recomender from './pages/Recommender'
+import Recommender from './pages/Recommender'
 import ProductPage from './pages/ProductPage'
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -11,7 +11,7 @@ import Preference from './pages/Preference';
 import NavBar from './components/NavBar'
 import Footer from './components/Footer';
 
-//Sytle
+//Style
 import './App.css'
 import './index.css'
 
@@ -40,7 +40,7 @@ function App() {
       <main className='main-content'>
         <Routes>
           <Route path='/' element={<Home />} />
-          <Route path='/recommender' element={<Recomender />} />
+          <Route path='/recommender' element={<Recommender />} />
           <Route path='/preference' element={<Preference />} />
           <Route path='/product/:sku' element={<ProductPage />} />
           <Route path='/login' element={<Login setUser={setUser} />} />

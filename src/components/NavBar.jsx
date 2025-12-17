@@ -34,7 +34,7 @@ export default function NavBar({ user, onLogout }) {
                     <div className="flex items-center gap-4">
                         <span className="text-white text-lg font-medium">{user.username}</span>
                         <button onClick={onLogout} className="text-white hover:text-gray-300 transition text-lg font-medium">
-                            <Link to="/home">
+                            <Link to="/">
                                 Log out
                             </Link>
                         </button>

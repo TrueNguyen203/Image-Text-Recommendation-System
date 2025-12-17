@@ -33,7 +33,7 @@ export default function NavBar({ user, onLogout }) {
                 {user ? (
                     <div className="flex items-center gap-4">
                         <span className="text-white text-lg font-medium">{user.username}</span>
-                        <button onClick={onLogout} className="text-white hover:text-gray-300 transition text-lg font-medium">
+                        <button onClick={onLogout} className="text-white hover:text-gray-300 hover:underline hover:decoration-white transition text-lg font-medium">
                             <Link to="/">
                                 Log out
                             </Link>
@@ -41,10 +41,10 @@ export default function NavBar({ user, onLogout }) {
                     </div>
                 ) : (
                     <>
-                        <Link to="/login" className="text-white hover:text-gray-300 transition text-lg font-medium">
+                        <Link to="/login" className="text-white hover:text-gray-300 hover:underline hover:decoration-white transition text-lg font-medium">
                             Login
                         </Link>
-                        <Link to="/register" className="text-white hover:text-gray-300 transition text-lg font-medium">
+                        <Link to="/register" className="text-white hover:text-gray-300 hover:underline hover:decoration-white transition text-lg font-medium">
                             Register
                         </Link>
                     </>

@@ -1,4 +1,4 @@
-# Image-Text-Recommender-System
+# Clothing e-commerce website with Image/Text based recommender system
 
 A modern clothing e-commerce platform built with **ReactJS**, featuring an advanced **Image-Text Recommender System**. This project integrates semantic search and personalized recommendations to enhance the user shopping experience.
 
@@ -173,6 +173,7 @@ Follow these steps to get the project running locally.
 ## 📄 License
 
 This project is licensed under the MIT License.
+
 
 
 
